@@ -1,0 +1,4 @@
+{
+  "plugin": ["opencode-ambient/plugin"],
+  "$schema": "https://opencode.ai/config.json"
+}
