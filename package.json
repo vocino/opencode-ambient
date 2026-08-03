@@ -40,9 +40,9 @@
   },
   "devDependencies": {
     "@opencode-ai/plugin": "^1.18.11",
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.20.1",
     "typescript": "^5.8.0",
-    "vitest": "^2.0.0"
+    "vitest": "^2.1.9"
   },
   "engines": { "node": ">=18" }
 }
