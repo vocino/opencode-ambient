@@ -47,10 +47,10 @@ export async function startDaemon(): Promise<void> {
   ensureConfigDir();
   activeConfig = loadConfig();
 
-  server = createServer(async (req, res) => {
+  server = createServer(async (req: any, res: any) => {
     if (req.method === "POST" && req.url === "/glow") {
       let body = "";
-      req.on("data", (c) => (body += c));
+      req.on("data", (c: any) => (body += c));
       req.on("end", async () => {
         try {
           const data = JSON.parse(body) as GlowRequest;
