@@ -24,44 +24,53 @@ export const STATE_RGB: Record<AgentState, RgbColor> = {
   error: { r: 210, g: 15, b: 57 },
 };
 
-// Unified glow — ONE function does both Hue and Govee
-export async function glow(config: AmbientConfig, state: AgentState): Promise<void> {
+// Unified glow — ONE function does both Hue and Govee, failsafe
+export async function glow(config: AmbientConfig, state: AgentState, opts?: { brightness?: number }): Promise<void> {
   const cie = config.colors[state]?.cie ?? STATE_CIE[state];
   const rgb = config.colors[state]?.rgb ?? STATE_RGB[state];
-  const bri = config.brightness.start;
-  const tt = config.daemon.transitionMs;
+  const bri = typeof opts?.brightness === "number" ? opts.brightness : config.brightness?.start ?? 100;
+  const tt = config.daemon?.transitionMs ?? 400;
 
   const tasks: Promise<void>[] = [];
 
-  if (config.hue.enabled) {
+  if (config.hue?.enabled) {
     tasks.push(
-      setHueColor(config.hue.ip, config.hue.username, config.hue.lightId, cie, bri, tt).catch(() => {}),
+      (async () => {
+        try {
+          await setHueColor(config.hue.ip, config.hue.username, config.hue.lightId, cie, bri, tt);
+        } catch {
+          // network device may be unreachable — keep ambient non-blocking
+        }
+      })(),
     );
   }
 
-  if (config.govee.enabled) {
+  if (config.govee?.enabled) {
     tasks.push(
       (async () => {
         try {
           await setGoveePower(config.govee.ip, true);
           await setGoveeBrightness(config.govee.ip, bri);
           await setGoveeColor(config.govee.ip, rgb);
-        } catch {}
+        } catch {
+          // non-blocking
+        }
       })(),
     );
   }
 
-  await Promise.all(tasks);
+  if (tasks.length === 0) return;
+  await Promise.allSettled(tasks);
 }
 
 // Local blending for smooth transitions without bridge roundtrips
 export function colorForState(config: AmbientConfig, state: AgentState): StateColor {
-  const c = config.colors[state];
+  const c = config.colors?.[state];
   if (c) return c;
   return {
     name: state,
     hex: "#ffffff",
-    cie: STATE_CIE[state],
-    rgb: STATE_RGB[state],
+    cie: STATE_CIE[state] ?? STATE_CIE.idle,
+    rgb: STATE_RGB[state] ?? STATE_RGB.idle,
   };
 }
