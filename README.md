@@ -95,6 +95,18 @@ Examples use `10.0.0.x` — replace with your LAN IPs. No `192.168.4/5/6.x` or s
 
 Works with `vocino/opencode-autonomy` — 4 agents (build 300, fixer 150, explore 80, plan 100). When build agent writes files: orange. Tool uses: cyan. Waiting for permission: purple. Done: white flash → idle green.
 
+## Versioning
+
+Follows [Semantic Versioning 2.0.0](https://semver.org) — `MAJOR.MINOR.PATCH`
+
+- **MAJOR** — breaking API
+- **MINOR** — new feature, backwards-compatible
+- **PATCH** — bugfix, backwards-compatible
+
+`0.y.z` = initial dev, MINOR can be breaking-ish. Conventional commits: `fix:` → PATCH, `feat:` → MINOR, `feat!:` → MAJOR.
+
+Tag `vX.Y.Z` = release, auto-published to npm when we add CI.
+
 ## License
 
 MIT — Vocino
