@@ -57,6 +57,8 @@ export const STATE_PRESETS: Record<AgentState, string> = {
   waiting: "#8839ef",   // purple needs input
   done: "#ffffff",      // white flash complete
   error: "#d20f39",     // red error
+  cursor: "#facc15",    // Cursor yellow — distinct, you see Cursor council running
+  meta: "#0064d1",      // Meta blue — deep Meta AI
 };
 
 export function buildStateColor(state: AgentState): StateColor {
@@ -76,5 +78,7 @@ export function buildAllStateColors(): Record<AgentState, StateColor> {
     waiting: buildStateColor("waiting"),
     done: buildStateColor("done"),
     error: buildStateColor("error"),
+    cursor: buildStateColor("cursor"),
+    meta: buildStateColor("meta"),
   };
 }

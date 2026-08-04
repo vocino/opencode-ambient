@@ -17,6 +17,8 @@ export const VALID_STATES: AgentState[] = [
   "waiting",
   "done",
   "error",
+  "cursor",
+  "meta",
 ];
 
 export function ensureConfigDir(): void {
@@ -119,6 +121,15 @@ export function loadConfig(): AmbientConfig {
   } catch (e: any) {
     throw new Error(`Invalid config JSON at ${CONFIG_PATH}: ${e?.message ?? e}`);
   }
+  // auto-heal: fill missing colors from defaults so old configs keep working when we add states
+  try {
+    const defaults = buildAllStateColors();
+    if (raw.colors && typeof raw.colors === "object") {
+      for (const k of Object.keys(defaults) as (keyof typeof defaults)[]) {
+        if (!raw.colors[k]) raw.colors[k] = (defaults as any)[k];
+      }
+    }
+  } catch {}
   const errs = validateConfig(raw);
   if (errs.length) {
     throw new Error(`Invalid config: ${errs.join("; ")}`);

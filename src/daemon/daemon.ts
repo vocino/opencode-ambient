@@ -13,6 +13,8 @@ export const VALID_STATES = new Set<AgentState>([
   "waiting",
   "done",
   "error",
+  "cursor",
+  "meta",
 ]);
 
 export const MAX_BODY_BYTES = 10 * 1024; // 10kb

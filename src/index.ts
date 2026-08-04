@@ -45,7 +45,7 @@ program
 program
   .command("glow")
   .description("Set state manually")
-  .argument("<state>", "idle|planning|building|tool|fixing|waiting|done|error")
+  .argument("<state>", "idle|planning|building|tool|fixing|waiting|done|error|cursor|meta")
   .action(async (state: string) => {
     const s = state as AgentState;
     if (!configExists()) { const cfg = defaultConfig(); await glow(cfg, s); console.log(`glow ${s} (default, no config)`); return; }
@@ -62,7 +62,7 @@ program
   .command("demo")
   .description("Cycle all states with glow")
   .action(async () => {
-    const states: AgentState[] = ["idle", "planning", "building", "tool", "fixing", "waiting", "done", "error", "idle"];
+    const states: AgentState[] = ["idle", "planning", "building", "tool", "fixing", "waiting", "cursor", "meta", "done", "error", "idle"];
     const cfg = configExists() ? loadConfig() : defaultConfig();
     for (const s of states) {
       console.log(s);

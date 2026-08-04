@@ -11,6 +11,8 @@ export const STATE_CIE: Record<AgentState, CieXY> = {
   waiting: { x: 0.25, y: 0.12 },
   done: { x: 0.3227, y: 0.329 },
   error: { x: 0.675, y: 0.322 },
+  cursor: { x: 0.468, y: 0.481 },  // #facc15 yellow amber
+  meta: { x: 0.14, y: 0.08 },      // #0064d1 deep meta blue
 };
 
 export const STATE_RGB: Record<AgentState, RgbColor> = {
@@ -22,6 +24,8 @@ export const STATE_RGB: Record<AgentState, RgbColor> = {
   waiting: { r: 136, g: 57, b: 239 },
   done: { r: 255, g: 255, b: 255 },
   error: { r: 210, g: 15, b: 57 },
+  cursor: { r: 250, g: 204, b: 21 },
+  meta: { r: 0, g: 100, b: 209 },
 };
 
 // Unified glow — ONE function does both Hue and Govee, failsafe

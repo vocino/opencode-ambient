@@ -1,4 +1,4 @@
-export type AgentState = "idle" | "planning" | "building" | "tool" | "fixing" | "waiting" | "done" | "error";
+export type AgentState = "idle" | "planning" | "building" | "tool" | "fixing" | "waiting" | "done" | "error" | "cursor" | "meta";
 
 export interface CieXY { x: number; y: number; }
 export interface RgbColor { r: number; g: number; b: number; }
