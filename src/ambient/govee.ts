@@ -20,7 +20,7 @@ export async function discoverGovee(timeoutMs = TIMEOUT): Promise<DiscoveredGove
     try {
       sock = createSocket({ type: "udp4", reuseAddr: true });
       sock.on("error", () => { try { sock?.close(); } catch {} });
-      sock.on("message", (buf: Buffer) => {
+      sock.on("message", (buf: any) => {
         try {
           const p = JSON.parse(buf.toString("utf-8")) as any;
           const d = p?.msg?.data;

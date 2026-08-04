@@ -15,6 +15,11 @@ export const VALID_STATES = new Set<AgentState>([
   "error",
   "cursor",
   "meta",
+  "anthropic",
+  "openai",
+  "openrouter",
+  "google",
+  "local",
 ]);
 
 export const MAX_BODY_BYTES = 10 * 1024; // 10kb

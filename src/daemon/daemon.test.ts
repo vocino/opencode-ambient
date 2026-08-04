@@ -20,6 +20,13 @@ describe("daemon utils", () => {
     expect(VALID_STATES.has("idle" as any)).toBe(true);
     expect(VALID_STATES.has("building" as any)).toBe(true);
     expect(VALID_STATES.has("error" as any)).toBe(true);
+    expect(VALID_STATES.has("cursor" as any)).toBe(true);
+    expect(VALID_STATES.has("meta" as any)).toBe(true);
+    expect(VALID_STATES.has("anthropic" as any)).toBe(true);
+    expect(VALID_STATES.has("openai" as any)).toBe(true);
+    expect(VALID_STATES.has("openrouter" as any)).toBe(true);
+    expect(VALID_STATES.has("google" as any)).toBe(true);
+    expect(VALID_STATES.has("local" as any)).toBe(true);
   });
 
   it("MAX_BODY_BYTES is 10kb", () => {

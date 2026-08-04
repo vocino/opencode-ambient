@@ -10,6 +10,14 @@ describe("colors", () => {
   });
   it("all states", () => {
     const all = buildAllStateColors();
-    expect(Object.keys(all).length).toBe(8);
+    // 8 lifecycle + 7 providers = 15
+    expect(Object.keys(all).length).toBe(15);
+  });
+  it("provider hues distinct", () => {
+    const providers = ["cursor","meta","anthropic","openai","openrouter","google","local"] as const;
+    for (const p of providers) {
+      expect(STATE_PRESETS[p], p).toBeTruthy();
+      expect(hexToCieXY(STATE_PRESETS[p])).toBeTruthy();
+    }
   });
 });

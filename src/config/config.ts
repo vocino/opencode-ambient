@@ -19,6 +19,11 @@ export const VALID_STATES: AgentState[] = [
   "error",
   "cursor",
   "meta",
+  "anthropic",
+  "openai",
+  "openrouter",
+  "google",
+  "local",
 ];
 
 export function ensureConfigDir(): void {

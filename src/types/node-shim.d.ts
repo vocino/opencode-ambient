@@ -4,9 +4,18 @@ declare module 'os' { export function homedir():string; }
 declare module 'path' { export function join(...a:any[]):string; }
 declare module 'commander' { export class Command { name(a:string):this; description(a:string):this; command(a:string):this; argument(a:string,b?:string):this; action(a:any):this; parseAsync(a?:any):Promise<void>; } }
 declare module '@opencode-ai/plugin' { export type Plugin = any; }
-declare module 'dgram' { export type Socket = any; export function createSocket(a:string):any; }
-declare module 'undici' { export function fetch(a:any,b?:any):Promise<any>; }
+declare module 'dgram' {
+  export type Socket = any;
+  export function createSocket(type: string): any;
+  export function createSocket(opts: { type: string; reuseAddr?: boolean }): any;
+  export interface Buffer {}
+}
+declare module 'undici' {
+  export function fetch(a:any,b?:any):Promise<any>;
+  export class Agent { constructor(opts?: any); }
+}
 declare const process:any;
 declare const Buffer:any;
+type Buffer = any;
 declare namespace NodeJS { type Timeout = any; }
 // minimal undici fetch global

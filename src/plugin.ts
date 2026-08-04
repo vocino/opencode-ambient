@@ -59,29 +59,38 @@ let fixStreak = 0;
 function resolveModelString(m: any): string {
   if (!m) return "";
   if (typeof m === "string") return m;
-  // opencode model can be object with modelID/id/model
   return m.modelID ?? m.modelId ?? m.id ?? m.model ?? m.name ?? "";
 }
 
-function detectProvider(modelVal: any, providerVal: any): "cursor" | "meta" | null {
+type Provider = "cursor" | "meta" | "anthropic" | "openai" | "openrouter" | "google" | "local";
+
+function detectProvider(modelVal: any, providerVal: any): Provider | null {
   const modStr = resolveModelString(modelVal).toLowerCase();
   let provStr = "";
   if (typeof providerVal === "string") provStr = providerVal.toLowerCase();
   else if (providerVal) provStr = (providerVal.id ?? providerVal.providerID ?? providerVal.providerId ?? providerVal.name ?? "").toLowerCase();
 
-  // prefer model prefix like "cursor/claude-opus" or "meta/..."
   const combined = `${provStr} ${modStr}`;
+
+  // explicit router checks first — where money goes is what glows
+  if (combined.includes("openrouter")) return "openrouter";
   if (combined.includes("cursor")) return "cursor";
-  if (combined.includes("meta")) return "meta";
+  if (combined.includes("anthropic") || combined.includes("claude")) return "anthropic";
+  if (combined.includes("openai") || combined.includes("gpt")) return "openai";
+  if (combined.includes("google") || combined.includes("gemini")) return "google";
+  if (combined.includes("ollama") || combined.includes("local") || combined.includes("llama")) return "local";
+  if (combined.includes("meta") || combined.includes("muse")) return "meta";
   return null;
 }
 
 function inferMaxTokens(modelStr: string, provider: string | null): number {
   const s = `${provider ?? ""} ${modelStr}`.toLowerCase();
-  if (s.includes("1m") || s.includes("1000000") || s.includes("1000k") || s.includes("spark") || s.includes("meta")) return 1_000_000;
-  if (s.includes("200k") || s.includes("200000") || s.includes("sonnet") || s.includes("opus") || s.includes("claude") || s.includes("cursor")) return 200_000;
-  if (s.includes("128k") || s.includes("gpt-4")) return 128_000;
-  if (s.includes("32k")) return 32_000;
+  // Meta / Gemini / long-context can hit 1M
+  if (s.includes("1m") || s.includes("1000000") || s.includes("1000k") || s.includes("spark") || s.includes("muse") || s.includes("gemini-1.5-pro") || s.includes("gemini-2")) return 1_000_000;
+  if (s.includes("200k") || s.includes("200000") || s.includes("sonnet") || s.includes("opus") || s.includes("claude") || s.includes("cursor") || s.includes("anthropic")) return 200_000;
+  if (s.includes("128k") || s.includes("gpt-4") || s.includes("openai")) return 128_000;
+  if (s.includes("openrouter")) return 200_000; // varies, take common max
+  if (s.includes("32k") || s.includes("local") || s.includes("ollama")) return 32_000;
   return 128_000;
 }
 
@@ -161,7 +170,7 @@ async function pushState(state: string, extra?: string, opts?: { pressure?: numb
   } catch {}
 }
 
-export const server: Plugin = async (_input, opts: any) => {
+export const server: Plugin = async (_input: any, opts: any) => {
   if (opts?.port) daemonUrl = `http://127.0.0.1:${opts.port}`;
   if (opts?.daemonUrl) daemonUrl = opts.daemonUrl;
 

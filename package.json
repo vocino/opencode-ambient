@@ -1,7 +1,7 @@
 {
   "name": "opencode-ambient",
-  "version": "0.1.0",
-  "description": "Ambient lights for opencode — Hue + Govee glow as your agents build, fix, ship",
+  "version": "0.3.0",
+  "description": "See the light where your tokens and money go — provider-indexed Hue + Govee for opencode",
   "type": "module",
   "license": "MIT",
   "author": "Vocino (https://vocino.com)",
@@ -23,8 +23,8 @@
       "import": "./dist/plugin.js"
     }
   },
-  "files": ["dist/", "README.md", "LICENSE", "opencode.json.example"],
-  "keywords": ["opencode", "opencode-plugin", "philips-hue", "govee", "ambient", "glow"],
+  "files": ["dist/", "README.md", "LICENSE", "docs/PRINCIPLES.md", "opencode.json.example"],
+  "keywords": ["opencode", "opencode-plugin", "philips-hue", "govee", "ambient", "glow", "tokens", "cost"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

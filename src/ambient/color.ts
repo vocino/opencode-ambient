@@ -11,7 +11,6 @@ function hexToRgb(hex: string): RgbColor | null {
 }
 
 function rgbToCie(r: number, g: number, b: number): CieXY {
-  // sRGB -> XYZ -> xy, same as claude-hue v2
   let R = r / 255, G = g / 255, B = b / 255;
   R = R > 0.04045 ? Math.pow((R + 0.055) / 1.055, 2.4) : R / 12.92;
   G = G > 0.04045 ? Math.pow((G + 0.055) / 1.055, 2.4) : G / 12.92;
@@ -48,69 +47,56 @@ export function interpolateRgb(start: RgbColor, end: RgbColor, t: number): RgbCo
   };
 }
 
-// Pressure blending: as context tank fills (0->1), shift toward warm/dim
-// For immersive dark-room coding: fresh = green/blue calm, full = amber/orange/red hot
+// Pressure blending: token tank 0..1 -> warm shift + dim
+// See docs/PRINCIPLES.md §2 — brightness IS life, warmth IS cost
 
 export interface PressureBlend {
   cie: CieXY;
   rgb: RgbColor;
-  brightnessFactor: number; // 1.0 = normal, 0.35 = dimmed tank-drained
+  brightnessFactor: number; // 1.0 → 0.35 drained
 }
 
 export function pressureBlend(base: StateColor, pressure: number): PressureBlend {
   const p = Math.max(0, Math.min(1, pressure));
   if (p < 0.01) return { cie: base.cie, rgb: base.rgb, brightnessFactor: 1 };
 
-  // Define pressure gradient stops
-  // 0% = base color (cool calm)
-  // 40% = slightly warm
-  // 70% = amber warning
-  // 85% = orange hot
-  // 95%+ = red drained
-  const warnAmber: RgbColor = { r: 250, g: 204, b: 21 }; // #facc15 cursor yellow
+  // Gradient: 0% base → 40% 20% toward amber → 70% amber → 85% orange → 95%+ red
+  const warnAmber: RgbColor = { r: 250, g: 204, b: 21 }; // #facc15
   const hotOrange: RgbColor = { r: 254, g: 100, b: 11 }; // #fe640b
   const drainedRed: RgbColor = { r: 210, g: 15, b: 57 }; // #d20f39
 
   let targetRgb: RgbColor;
-  let targetCie: CieXY;
-  let t: number;
 
   if (p < 0.4) {
-    // 0->0.4: base -> 20% toward amber
-    t = (p / 0.4) * 0.2;
+    const t = (p / 0.4) * 0.2;
     targetRgb = interpolateRgb(base.rgb, warnAmber, t);
   } else if (p < 0.7) {
-    t = (p - 0.4) / 0.3; // 0->1 across 0.4-0.7
+    const t = (p - 0.4) / 0.3;
     const mid = interpolateRgb(base.rgb, warnAmber, 0.2);
     targetRgb = interpolateRgb(mid, warnAmber, t * 0.8);
   } else if (p < 0.85) {
-    t = (p - 0.7) / 0.15;
+    const t = (p - 0.7) / 0.15;
     targetRgb = interpolateRgb(warnAmber, hotOrange, t);
   } else {
-    t = (p - 0.85) / 0.15;
+    const t = (p - 0.85) / 0.15;
     targetRgb = interpolateRgb(hotOrange, drainedRed, Math.min(1, t));
   }
 
-  // CIE from RGB interpolation for better perceptual shift
-  targetCie = rgbToCie(targetRgb.r, targetRgb.g, targetRgb.b);
+  const targetCie = rgbToCie(targetRgb.r, targetRgb.g, targetRgb.b);
 
-  // Brightness dims as tank drains — game-like low life
-  // 0% = 100%, 70% = 90%, 85% = 75%, 95% = 55%, 100% = 35%
+  // Brightness dims as tank drains: 100% → 90% @0.7 → 75% @0.85 → 55% @0.95 → 35% @1.0
   let bf = 1;
-  if (p < 0.7) bf = 1 - p * 0.15; // ~0.9 at 0.7
-  else if (p < 0.85) bf = 0.895 - ((p - 0.7) / 0.15) * 0.15; // 0.9->0.75
-  else if (p < 0.95) bf = 0.75 - ((p - 0.85) / 0.1) * 0.2; // 0.75->0.55
-  else bf = 0.55 - ((p - 0.95) / 0.05) * 0.2; // 0.55->0.35
-
+  if (p < 0.7) bf = 1 - p * 0.15;
+  else if (p < 0.85) bf = 0.895 - ((p - 0.7) / 0.15) * 0.15;
+  else if (p < 0.95) bf = 0.75 - ((p - 0.85) / 0.1) * 0.2;
+  else bf = 0.55 - ((p - 0.95) / 0.05) * 0.2;
   bf = Math.max(0.3, Math.min(1, bf));
 
   return { cie: targetCie, rgb: targetRgb, brightnessFactor: bf };
 }
 
-// Fix-loop pulse: rapid fixes = more urgent flicker
 export function fixPulseBrightness(baseBri: number, fixStreak: number): number {
   if (fixStreak <= 1) return baseBri;
-  // each extra fix in window bumps urgency 5% brighter pulse then back dim
   const bump = Math.min(20, (fixStreak - 1) * 6);
   return Math.min(100, baseBri + bump);
 }
@@ -122,17 +108,27 @@ export function fixPulseTransition(baseMs: number, fixStreak: number): number {
   return baseMs;
 }
 
+// Provider-indexed palette — where your money goes is what glows
+// Principles: docs/PRINCIPLES.md §1 — 7 providers, ≤8 hues, distinct at 35% brightness
 export const STATE_PRESETS: Record<AgentState, string> = {
-  idle: "#40a02b",      // green calm
-  planning: "#1793d1",  // blue thinking (Arch blue from your stack)
-  building: "#fe640b",  // orange writing code
-  tool: "#04a5e5",      // cyan tool calls
-  fixing: "#fe640b",    // orange -> red for repair
-  waiting: "#8839ef",   // purple needs input
-  done: "#ffffff",      // white flash complete
-  error: "#d20f39",     // red error
-  cursor: "#facc15",    // Cursor yellow — distinct, you see Cursor council running
-  meta: "#0064d1",      // Meta blue — deep Meta AI
+  // lifecycle
+  idle: "#40a02b",        // green calm
+  planning: "#1793d1",   // blue thinking
+  building: "#fe640b",   // orange writing code
+  tool: "#04a5e5",       // cyan tool calls
+  fixing: "#fe640b",     // orange repair (uses fix streak for urgency, not color)
+  waiting: "#8839ef",     // purple needs input
+  done: "#ffffff",        // white flash
+  error: "#d20f39",       // red
+
+  // providers — distinct hues >30° apart, tested at 35% brightness
+  cursor: "#facc15",     // yellow amber — Cursor proxy
+  meta: "#0064d1",       // deep blue — Meta
+  anthropic: "#d97757",  // clay orange — Claude direct
+  openai: "#10a37f",     // teal — OpenAI
+  openrouter: "#8b5cf6", // violet — router spend
+  google: "#4285f4",     // light blue — Gemini
+  local: "#9ca3af",      // slate — ollama / local llm
 };
 
 export function buildStateColor(state: AgentState): StateColor {
@@ -143,16 +139,7 @@ export function buildStateColor(state: AgentState): StateColor {
 }
 
 export function buildAllStateColors(): Record<AgentState, StateColor> {
-  return {
-    idle: buildStateColor("idle"),
-    planning: buildStateColor("planning"),
-    building: buildStateColor("building"),
-    tool: buildStateColor("tool"),
-    fixing: buildStateColor("fixing"),
-    waiting: buildStateColor("waiting"),
-    done: buildStateColor("done"),
-    error: buildStateColor("error"),
-    cursor: buildStateColor("cursor"),
-    meta: buildStateColor("meta"),
-  };
+  return Object.fromEntries(
+    (Object.keys(STATE_PRESETS) as AgentState[]).map(k => [k, buildStateColor(k)])
+  ) as Record<AgentState, StateColor>;
 }

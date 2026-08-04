@@ -1,4 +1,20 @@
-export type AgentState = "idle" | "planning" | "building" | "tool" | "fixing" | "waiting" | "done" | "error" | "cursor" | "meta";
+export type AgentState =
+  | "idle"
+  | "planning"
+  | "building"
+  | "tool"
+  | "fixing"
+  | "waiting"
+  | "done"
+  | "error"
+  // providers — short list, where money/limit lives
+  | "cursor"
+  | "meta"
+  | "anthropic"
+  | "openai"
+  | "openrouter"
+  | "google"
+  | "local";
 
 export interface CieXY { x: number; y: number; }
 export interface RgbColor { r: number; g: number; b: number; }

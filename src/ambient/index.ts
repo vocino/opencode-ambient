@@ -12,8 +12,13 @@ export const STATE_CIE: Record<AgentState, CieXY> = {
   waiting: { x: 0.25, y: 0.12 },
   done: { x: 0.3227, y: 0.329 },
   error: { x: 0.675, y: 0.322 },
-  cursor: { x: 0.468, y: 0.481 },  // #facc15 yellow amber
-  meta: { x: 0.14, y: 0.08 },      // #0064d1 deep meta blue
+  cursor: { x: 0.468, y: 0.481 },    // #facc15
+  meta: { x: 0.14, y: 0.08 },      // #0064d1
+  anthropic: { x: 0.47, y: 0.38 },  // #d97757 clay
+  openai: { x: 0.206, y: 0.46 },    // #10a37f teal
+  openrouter: { x: 0.22, y: 0.13 },  // #8b5cf6 violet
+  google: { x: 0.16, y: 0.18 },   // #4285f4 light blue
+  local: { x: 0.33, y: 0.34 },      // #9ca3af slate
 };
 
 export const STATE_RGB: Record<AgentState, RgbColor> = {
@@ -27,6 +32,11 @@ export const STATE_RGB: Record<AgentState, RgbColor> = {
   error: { r: 210, g: 15, b: 57 },
   cursor: { r: 250, g: 204, b: 21 },
   meta: { r: 0, g: 100, b: 209 },
+  anthropic: { r: 217, g: 119, b: 87 },
+  openai: { r: 16, g: 163, b: 127 },
+  openrouter: { r: 139, g: 92, b: 246 },
+  google: { r: 66, g: 133, b: 244 },
+  local: { r: 156, g: 163, b: 175 },
 };
 
 // Unified glow — ONE function does both Hue and Govee, failsafe

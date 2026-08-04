@@ -1,38 +1,65 @@
 # opencode-ambient
 
-**Your room glows with your agents** — Hue + Govee pulse as opencode plans, builds, fixes, ships. Now with **Cursor + Meta** provider colors so you see which model is driving.
+**See the light and know where your tokens and money are going.** Dark room, Hue + Govee shift as your agents work — provider shows as color, cost shows as life.
 
-```
-idle        🟢 green calm
-planning    🔵 blue thinking
-building    🟠 orange writing code
-tool        🔵 cyan tool calls
-fixing      🟠 orange repair
-waiting     🟣 purple needs input
-cursor      🟡 yellow amber — Cursor (claude-opus, composer)
-meta        🔵 deep blue — Meta AI (muse-spark)
-done        ⚪ white flash complete
-error       🔴 red error
-```
+> One function does both Hue (CIE xy) + Govee (LAN UDP). No dashboard to check, just feel the room.
 
-> ~300 LOC unified — 1 function does both Hue (CIE xy) + Govee (LAN UDP) from ~180 bytes JSON.
+## The Room
 
-## Why?
+You're coding in the dark. The lights do things as work happens:
 
-`claude-hue` showed green→red for Claude Code limits. Opencode has 4 agents running in parallel — you want to *feel* which phase you're in, not read logs.
+- calm blue-green when idle
+- bright when fresh
+- dim when tank drains
+- fast flicker when stuck fixing
 
-From `claude-hue v2` lessons:
-- OAuth-only (fixed 429 #31021 with 5m + jitter, Retry-After backoff)
-- No HTTP server for extension (v1 had :7684), no file watcher, no `usage.log`
-- Unified: this repo does **both Hue + Govee in one ~200 LOC driver** instead of 2 repos
+No numbers, no dashboard. Glance at the room.
+
+## Principles (the contract)
+
+Full spec: [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) — this is the source of truth. If a feature doesn't fit these, we change the feature.
+
+**1. Provider-indexed, not model-indexed.** Short list of 7 beats 40 models. Where you pay is what glows:
+
+| provider | color | hex | when it glows |
+|---|---|---|---|
+| `meta` | deep blue | `#0064d1` | Meta AI, your 1M base |
+| `cursor` | yellow | `#facc15` | Cursor proxy / council |
+| `anthropic` | clay orange | `#d97757` | Claude direct |
+| `openai` | teal | `#10a37f` | GPT direct |
+| `openrouter` | violet | `#8b5cf6` | router spend |
+| `google` | light blue | `#4285f4` | Gemini |
+| `local` | slate | `#9ca3af` | ollama / local llm |
+
+If Claude comes via OpenRouter → violet. Where money goes = what glows.
+
+**2. Token tank = money.** One pressure value `0..1`:
+
+- `0%` fresh, 100% bright, calm
+- `40%` hint of amber, still fine
+- `70%` amber warning, think about `/compact`
+- `85%` orange hot, expensive zone
+- `95%+` red drained, 35% dim — finish or reset
+
+Brightness IS life. Warmth IS cost.
+
+**3. Fix-loop = urgency, not color.** Same orange, faster + brighter:
+
+- 2 fixes in 45s = +6% bright
+- 3 fixes = 60% faster flicker
+- 4+ = 80ms pulse, you feel stuck
+
+**4. One light carries two signals.** Base = provider. Warm shift + dim = pressure. Yellow at 90% still feels yellow, just hotter and dimmer.
+
+**5. Multi-light future-proof.** Your 3-light office? desk = provider, plays = pressure echo. Single-light stays compatible via `lightIds[]`.
 
 ## Install
 
 ```bash
 npm i -g opencode-ambient
-opencode-ambient setup     # Hue bridge + pick light + Govee scan (3 Qs)
-opencode-ambient start     # tiny HTTP :7686 POST /glow {state}
-opencode-ambient demo      # cycle all colors
+opencode-ambient setup     # Hue bridge + pick light + Govee scan
+opencode-ambient start     # tiny daemon 127.0.0.1:7686 POST /glow {state}
+opencode-ambient demo      # cycle all 15 states
 ```
 
 Add to `opencode.json`:
@@ -43,32 +70,41 @@ Add to `opencode.json`:
 }
 ```
 
-That's it. No daemon polling — opencode pushes state, ambient glows. Falls back to `curl http://127.0.0.1:7686/glow` if you prefer zero-dep hooks:
-
-```json
-{
-  "hooks": {
-    "tool.execute.before": "curl -s http://127.0.0.1:7686/glow -d '{\"state\":\"tool\"}' -H 'Content-Type: application/json'",
-    "tool.execute.after": "curl -s http://127.0.0.1:7686/glow -d '{\"state\":\"building\"}' -H 'Content-Type: application/json'"
-  }
-}
-```
+No daemon polling — opencode pushes, ambient glows.
 
 ## How it works
 
 ```
-opencode build agent -> plugin "tool.execute.before" -> fetch 127.0.0.1:7686/glow {building}
-                                    \
-                                     -> daemon glow() -> Hue: PUT /api/<user>/lights/<id>/state {xy,bri,tt}
-                                                        Govee: UDP 4003 {cmd:"colorwc", data:{color:{r,g,b}}}
-                          30s after last glow -> idle green
+opencode 4 agents → chat.params (model/provider) → plugin glow(provider color)
+                  → tool.execute.before → plugin glow(building|tool + pressure)
+                  → daemon POST /glow {state, pressure, fixStreak}
+                                 → hue: PUT /api/<user>/lights/<id>/state {xy,bri,tt}
+                                   govee: UDP 4003 {color:{r,g,b}}
+                  30s after last glow → idle green fade
 ```
 
-Core is `ambient/index.ts` glow():
-- Hue: same as claude-hue v2 — undici Agent `rejectUnauthorized:false` for self-signed bridge, 8s timeout
-- Govee: LAN API discovered via `239.255.255.250:4001` scan → `4002` response → `4003` unicast `colorwc` + `brightness` + `turn`. Fire-and-forget, no ack required
+Core files:
 
-Driver: 80 lines. Plugin: 60 lines. CLI + daemon: 120 lines. Setup: 80 lines.
+- `src/ambient/color.ts` — all palette + blending (provider base → pressure warm → fix urgency) — *single source of truth*
+- `src/ambient/index.ts` — `glow()` fans to `lightIds[]` or `lightId`, calls Hue + Govee
+- `src/plugin.ts` — provider detection + token estimate, no color logic
+- `src/daemon/daemon.ts` — validates, forwards `pressure, fixStreak, brightness` to `glow()`
+
+Adding a new provider = one hex in `color.ts`, no code change otherwise.
+
+## Real-time provider glow
+
+Home setup: `meta/muse-spark-1.1` build primary + `cursor/*` council (opencode-autonomy). You see:
+
+```
+meta blue → orange building → cyan tool → yellow cursor (council) → orange fixing → white done → green idle
+```
+
+Same for anthropic/openai/openrouter/google/local — each has its own glow.
+
+Token pressure: plugin estimates from `chat.params` + `tool` + `message` chars (~3.5 chars per token). When opencode sends real usage via `message.updated`, we snap to it. Max context inferred: 1M if meta/spark, 200k if claude/cursor/anthropic, 128k default, 32k local.
+
+Compaction or `session.created` = tank refills, room clears.
 
 ## Config
 
@@ -76,52 +112,31 @@ Driver: 80 lines. Plugin: 60 lines. CLI + daemon: 120 lines. Setup: 80 lines.
 
 ```json
 {
-  "hue": { "enabled": true, "ip": "10.0.0.10", "username": "...", "lightId": 1, "lightName": "Office" },
-  "govee": { "enabled": true, "ip": "10.0.0.11", "device": "...", "sku": "H60B0" },
+  "hue": {
+    "enabled": true,
+    "ip": "10.0.0.10",
+    "username": "...",
+    "lightId": 1,
+    "lightIds": [1, 2, 3],
+    "lightName": "Office"
+  },
+  "govee": { "enabled": false },
   "daemon": { "port": 7686, "transitionMs": 400, "idleReturnMs": 30000 }
 }
 ```
 
-Examples use `10.0.0.x` — replace with your LAN IPs. No `192.168.4/5/6.x` or secrets in repo.
+`lightIds` optional — if set, desk + plays all get same glow. Room group coming.
 
 ## CLI
 
-- `setup` — discover bridges + lights
-- `start` — daemon on 127.0.0.1:7686 POST /glow
-- `stop` — stop daemon
-- `status` — pid + hue/govee + current state
-- `glow <state>` — manual `idle|planning|building|tool|fixing|waiting|cursor|meta|done|error`
-- `demo` — cycle all
-
-## How real-time provider glow works
-
-Your home setup: `meta/muse-spark-1.1` build primary + `cursor/*` for council critic/creative (opencode-autonomy). Ambient's plugin hooks:
-
-- `chat.params` — opencode tells plugin `{model: "cursor/claude-opus-4-6", provider: "cursor"}` right before the LLM thinks. Ambient pushes `cursor` yellow instantly
-- same for `meta/muse-spark-1.1` → `meta` deep blue
-
-You see:
-```
-meta blue → orange building → cyan tool → yellow cursor (council kicking in) → orange fixing → white done → green idle
-```
-
-So you *feel* model routing live on your office lights without looking at logs.
-
-## opencode-autonomy tie-in
-
-Works with `vocino/opencode-autonomy` — 4 agents (build 300 meta, fixer 150 openrouter, explore 80 qwen, plan 100 + council cursor). When build agent writes files: orange. Tool uses: cyan. Waiting for permission: purple. Council (cursor) active: yellow flash. Meta primary: blue flash. Done: white flash → idle green.
+- `setup` — discover Hue bridge + Govee
+- `start` / `stop` / `status` — daemon
+- `glow <state>` — manual `idle|planning|building|tool|fixing|waiting|done|error|cursor|meta|anthropic|openai|openrouter|google|local`
+- `demo` — cycle all 15
 
 ## Versioning
 
-Follows [Semantic Versioning 2.0.0](https://semver.org) — `MAJOR.MINOR.PATCH`
-
-- **MAJOR** — breaking API
-- **MINOR** — new feature, backwards-compatible
-- **PATCH** — bugfix, backwards-compatible
-
-`0.y.z` = initial dev, MINOR can be breaking-ish. Conventional commits: `fix:` → PATCH, `feat:` → MINOR, `feat!:` → MAJOR.
-
-Tag `vX.Y.Z` = release, auto-published to npm when we add CI.
+Strict [semver](https://semver.org) — `MAJOR.MINOR.PATCH`, `0.y.z` same rules. `fix:` → PATCH, `feat:` → MINOR, `feat!:` → MAJOR.
 
 ## License
 
