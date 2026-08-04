@@ -37,17 +37,27 @@ describe("ambient glow", () => {
     expect(c.rgb).toEqual(STATE_RGB.tool);
   });
 
-  it("STATE maps have 8 entries each", () => {
-    expect(Object.keys(STATE_CIE).length).toBe(8);
-    expect(Object.keys(STATE_RGB).length).toBe(8);
+  it("STATE maps have 10 entries each (incl cursor/meta)", () => {
+    expect(Object.keys(STATE_CIE).length).toBe(10);
+    expect(Object.keys(STATE_RGB).length).toBe(10);
   });
 
   it("all states glow disabled path", async () => {
     const cfg = defaultConfig();
     cfg.hue.enabled = false;
     cfg.govee.enabled = false;
-    for (const s of ["idle", "planning", "building", "tool", "fixing", "waiting", "done", "error"] as const) {
+    for (const s of ["idle", "planning", "building", "tool", "fixing", "waiting", "done", "error", "cursor", "meta"] as const) {
       await glow(cfg, s);
     }
+  });
+
+  it("pressure dims toward warm", async () => {
+    const cfg = defaultConfig();
+    cfg.hue.enabled = false;
+    cfg.govee.enabled = false;
+    await expect(glow(cfg, "building", { pressure: 0 })).resolves.toBeUndefined();
+    await expect(glow(cfg, "building", { pressure: 0.5 })).resolves.toBeUndefined();
+    await expect(glow(cfg, "building", { pressure: 0.9 })).resolves.toBeUndefined();
+    await expect(glow(cfg, "building", { pressure: 1, fixStreak: 3 })).resolves.toBeUndefined();
   });
 });

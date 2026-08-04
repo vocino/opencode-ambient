@@ -46,6 +46,16 @@ export const STATE_MAP: Record<string, string> = {
 let daemonUrl = "http://127.0.0.1:7686";
 let lastProvider: string | null = null;
 
+// Token-tank: immersive pressure tracking (0..1 = full room -> drained)
+// We keep a running estimate since opencode doesn't always expose exact counts on every hook.
+// When real usage arrives via message.updated with prompt/completion tokens, we snap to it.
+
+let estimatedTokens = 0;
+let maxTokens = 128_000; // default, overridden by model detection
+let pressureOverride: number | null = null; // when real usage known
+let lastFixAt = 0;
+let fixStreak = 0;
+
 function resolveModelString(m: any): string {
   if (!m) return "";
   if (typeof m === "string") return m;
@@ -66,12 +76,86 @@ function detectProvider(modelVal: any, providerVal: any): "cursor" | "meta" | nu
   return null;
 }
 
-async function pushState(state: string, extra?: string) {
+function inferMaxTokens(modelStr: string, provider: string | null): number {
+  const s = `${provider ?? ""} ${modelStr}`.toLowerCase();
+  if (s.includes("1m") || s.includes("1000000") || s.includes("1000k") || s.includes("spark") || s.includes("meta")) return 1_000_000;
+  if (s.includes("200k") || s.includes("200000") || s.includes("sonnet") || s.includes("opus") || s.includes("claude") || s.includes("cursor")) return 200_000;
+  if (s.includes("128k") || s.includes("gpt-4")) return 128_000;
+  if (s.includes("32k")) return 32_000;
+  return 128_000;
+}
+
+function currentPressure(): number {
+  if (pressureOverride !== null) return Math.max(0, Math.min(1, pressureOverride));
+  const p = estimatedTokens / Math.max(1, maxTokens);
+  return Math.max(0, Math.min(1, p));
+}
+
+function bumpTokens(n: number) {
+  estimatedTokens += n;
+  if (estimatedTokens > maxTokens * 1.1) estimatedTokens = maxTokens * 1.1; // cap a bit over for full red
+}
+
+function tryExtractUsage(eventAny: any): number | null {
+  // try many shapes opencode might send: properties.usage, message.usage, delta.usage, data.usage
+  const candidates = [
+    eventAny?.usage,
+    eventAny?.properties?.usage,
+    eventAny?.properties?.message?.usage,
+    eventAny?.message?.usage,
+    eventAny?.part?.usage,
+    eventAny?.properties?.part?.usage,
+    eventAny?.data?.usage,
+    eventAny?.delta?.usage,
+  ];
+  for (const u of candidates) {
+    if (!u) continue;
+    // shapes: { prompt_tokens+completion, total_tokens, input_tokens+output }
+    const total = u.total_tokens ?? u.totalTokens ?? (u.prompt_tokens && u.completion_tokens ? u.prompt_tokens + u.completion_tokens : null) ?? (u.input_tokens && u.output_tokens ? u.input_tokens + u.output_tokens : null);
+    if (typeof total === "number" && total > 0) return total;
+    if (typeof u.tokens === "number") return u.tokens;
+  }
+  // also check prompt/completion separated
+  const pt = eventAny?.properties?.message?.tokens ?? eventAny?.tokens ?? null;
+  if (typeof pt === "number") return pt;
+  return null;
+}
+
+function trackFix(state: string) {
+  const now = Date.now();
+  if (state === "fixing" || state === "error") {
+    if (now - lastFixAt < 45_000) {
+      fixStreak += 1;
+    } else {
+      fixStreak = 1;
+    }
+    lastFixAt = now;
+  } else if (state === "idle" || state === "done") {
+    // decay streak after success/idle
+    if (now - lastFixAt > 20_000) fixStreak = Math.max(0, fixStreak - 1);
+  }
+  if (fixStreak > 8) fixStreak = 8;
+}
+
+async function pushState(state: string, extra?: string, opts?: { pressure?: number; fixStreak?: number; tokensUsed?: number; tokensMax?: number }) {
   try {
+    const p = opts?.pressure ?? currentPressure();
+    const body: any = {
+      state,
+      extra,
+      pressure: p,
+      usagePercent: Math.round(p * 100),
+      fixStreak: opts?.fixStreak ?? fixStreak,
+    };
+    if (typeof opts?.tokensUsed === "number") body.tokensUsed = opts.tokensUsed;
+    else if (estimatedTokens > 0) body.tokensUsed = Math.round(estimatedTokens);
+    if (typeof opts?.tokensMax === "number") body.tokensMax = opts.tokensMax;
+    else if (maxTokens) body.tokensMax = maxTokens;
+
     await fetch(`${daemonUrl}/glow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ state, extra }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(800),
     });
   } catch {}
@@ -83,44 +167,93 @@ export const server: Plugin = async (_input, opts: any) => {
 
   return {
     // Chat params — this is how opencode tells us which provider/model is about to run.
-    // That lets us glow distinct colors for Cursor vs Meta in real time.
+    // That lets us glow distinct colors for Cursor vs Meta in real time, and infer context limits for token tank.
     "chat.params": async (input: any) => {
+      const modelStr = resolveModelString(input?.model);
       const prov = detectProvider(input?.model, input?.provider);
+      maxTokens = inferMaxTokens(modelStr, prov);
       if (prov) {
         lastProvider = prov;
-        void pushState(prov, resolveModelString(input?.model));
+        trackFix(prov);
+        void pushState(prov, modelStr, { tokensMax: maxTokens });
+      } else {
+        // still bump slightly for thinking
+        bumpTokens(120);
       }
+    },
+    "chat.message": async (input: any) => {
+      // Estimate tokens from message content (chars / 4 rough)
+      try {
+        const msg = input?.message;
+        const parts = input?.parts ?? msg?.parts ?? [];
+        let chars = 0;
+        if (typeof msg?.content === "string") chars += msg.content.length;
+        for (const p of parts) {
+          if (typeof p?.text === "string") chars += p.text.length;
+          if (typeof p?.content === "string") chars += p.content.length;
+        }
+        if (chars > 0) bumpTokens(Math.max(50, Math.round(chars / 3.5)));
+      } catch {}
     },
     "tool.execute.before": async ({ tool }: { tool: string }) => {
       const normalized = tool?.toLowerCase?.() ?? tool;
       const s = STATE_MAP[normalized] ?? STATE_MAP[tool] ?? "tool";
-      // if we just saw cursor/meta, keep that extra for tracing, but state stays tool/building
-      // except if tool is ambiguous and provider is active, tint toward provider color briefly
+      bumpTokens(s === "building" ? 700 : s === "tool" ? 350 : 200);
+      trackFix(s);
       const extra = lastProvider ? `${lastProvider}:${tool}` : tool;
       void pushState(s, extra);
-      // when provider is known and we're in a fast tool burst, also re-assert provider color for visibility
-      if (lastProvider && (s === "tool" || s === "planning")) {
-        // 1 in 4 tool bursts we still show provider pulse so you SEE cursor usage live
-        // but keep primary state as tool to not spam — daemon stays as last tool state
-      }
     },
-    "tool.execute.after": async ({ tool }: { tool: string }) => {
+    "tool.execute.after": async ({ tool, output }: { tool: string; output?: any }) => {
+      // Small token bump from tool output length
+      try {
+        const outStr = typeof output === "string" ? output : output?.content ?? "";
+        if (typeof outStr === "string" && outStr.length > 200) bumpTokens(Math.min(1500, Math.round(outStr.length / 6)));
+      } catch {}
       if (tool === "bash" || tool === "write" || tool === "edit" || tool === "patch") {
         void pushState("building", lastProvider ? `${lastProvider}:${tool}` : tool);
       }
     },
-    event: async ({ event }: { event: { type: string } }) => {
-      const t = event?.type ?? "";
-      if (t === "session.idle") {
+    event: async ({ event }: { event: any }) => {
+      const t = event?.type ?? event?.event ?? "";
+      // Snap to real usage if opencode forwards it
+      const realTokens = tryExtractUsage(event);
+      if (realTokens && realTokens > estimatedTokens * 0.5) {
+        // trust real usage — it's more accurate than estimate
+        estimatedTokens = realTokens;
+        pressureOverride = null; // use estimate-based pressure now that we have real numbers
+        // If we know usage, pressure is directly estimatedTokens/maxTokens — no override needed
+      }
+
+      if (t === "session.created") {
+        estimatedTokens = 0;
+        pressureOverride = 0;
+        fixStreak = 0;
+        void pushState("planning", t, { pressure: 0, fixStreak: 0, tokensUsed: 0 });
+      } else if (t === "session.idle") {
         lastProvider = null;
-        void pushState("idle");
-      } else if (t === "session.error") void pushState("error");
-      else if (t === "session.created") void pushState("planning");
-      else if (t === "session.compacted" || t === "session.compact") void pushState("planning", t);
-      else if (t.includes("error") || t.includes("fail")) void pushState("error", t);
-      else if (t.includes("done") || t.includes("complete") || t.includes("finish")) void pushState("done", t);
-      else if (t.includes("idle") || t.includes("waiting") || t.includes("question") || t.includes("ask")) {
+        trackFix("idle");
+        void pushState("idle", t, { fixStreak });
+      } else if (t === "session.error") {
+        trackFix("error");
+        void pushState("error", t, { fixStreak });
+      } else if (t === "session.compacted" || t === "session.compact") {
+        // compaction = context reset, room clears
+        estimatedTokens = Math.round(estimatedTokens * 0.25);
+        pressureOverride = null;
+        fixStreak = 0;
+        void pushState("planning", t, { pressure: currentPressure(), fixStreak: 0 });
+      } else if (t.includes("error") || t.includes("fail")) {
+        trackFix("error");
+        void pushState("error", t, { fixStreak });
+      } else if (t.includes("done") || t.includes("complete") || t.includes("finish")) {
+        trackFix("done");
+        void pushState("done", t, { fixStreak });
+      } else if (t.includes("idle") || t.includes("waiting") || t.includes("question") || t.includes("ask")) {
         void pushState("waiting", t);
+      } else if (t === "message.updated" || t === "message.part.updated") {
+        // Message progress = token tank slowly filling
+        if (!realTokens) bumpTokens(120);
+        void pushState("building", t);
       }
     },
   };

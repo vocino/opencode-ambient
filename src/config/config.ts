@@ -43,6 +43,11 @@ export function validateConfig(cfg: any): string[] {
       if (cfg.hue.lightId != null && (typeof cfg.hue.lightId !== "number" || cfg.hue.lightId < 1)) {
         errors.push("hue.lightId must be >= 1");
       }
+      if (cfg.hue.lightIds != null) {
+        if (!Array.isArray(cfg.hue.lightIds) || cfg.hue.lightIds.some((n: any) => typeof n !== "number" || n < 1)) {
+          errors.push("hue.lightIds must be array of numbers >=1");
+        }
+      }
     }
     if (cfg.hue.ip && typeof cfg.hue.ip === "string" && cfg.hue.ip.length > 253) {
       errors.push("hue.ip too long");

@@ -1,6 +1,7 @@
 import type { AgentState, CieXY, RgbColor, StateColor, AmbientConfig } from "../types.js";
 import { setHueColor } from "./hue.js";
 import { setGoveeColor, setGoveeBrightness, setGoveePower } from "./govee.js";
+import { pressureBlend, fixPulseBrightness, fixPulseTransition } from "./color.js";
 
 export const STATE_CIE: Record<AgentState, CieXY> = {
   idle: { x: 0.2151, y: 0.7106 },
@@ -29,24 +30,47 @@ export const STATE_RGB: Record<AgentState, RgbColor> = {
 };
 
 // Unified glow — ONE function does both Hue and Govee, failsafe
-export async function glow(config: AmbientConfig, state: AgentState, opts?: { brightness?: number }): Promise<void> {
-  const cie = config.colors[state]?.cie ?? STATE_CIE[state];
-  const rgb = config.colors[state]?.rgb ?? STATE_RGB[state];
-  const bri = typeof opts?.brightness === "number" ? opts.brightness : config.brightness?.start ?? 100;
-  const tt = config.daemon?.transitionMs ?? 400;
+export async function glow(config: AmbientConfig, state: AgentState, opts?: { brightness?: number; pressure?: number; fixStreak?: number; transitionMs?: number }): Promise<void> {
+  const baseColor = (config.colors as any)[state] ?? { cie: STATE_CIE[state], rgb: STATE_RGB[state] } as any;
+  const baseCie = (baseColor as any).cie ?? STATE_CIE[state];
+  const baseRgb = (baseColor as any).rgb ?? STATE_RGB[state];
+
+  let cie = baseCie;
+  let rgb = baseRgb;
+  let bri = typeof opts?.brightness === "number" ? opts.brightness : config.brightness?.start ?? 100;
+  let tt = typeof opts?.transitionMs === "number" ? opts.transitionMs : config.daemon?.transitionMs ?? 400;
+
+  // Pressure = token tank draining: shift color warm + dim
+  if (typeof opts?.pressure === "number" && opts.pressure > 0.01) {
+    const blend = pressureBlend({ name: state, hex: "", cie: baseCie, rgb: baseRgb } as any, opts.pressure);
+    cie = blend.cie;
+    rgb = blend.rgb;
+    bri = Math.round(bri * blend.brightnessFactor);
+  }
+
+  // Fix streak pulse — urgency when stuck in fix loop
+  const fixStreak = opts?.fixStreak ?? 0;
+  if (fixStreak > 1) {
+    bri = fixPulseBrightness(bri, fixStreak);
+    tt = fixPulseTransition(tt, fixStreak);
+  }
 
   const tasks: Promise<void>[] = [];
 
   if (config.hue?.enabled) {
-    tasks.push(
-      (async () => {
-        try {
-          await setHueColor(config.hue.ip, config.hue.username, config.hue.lightId, cie, bri, tt);
-        } catch {
-          // network device may be unreachable — keep ambient non-blocking
-        }
-      })(),
-    );
+    // Multi-light room fan-out: if lightIds present, glow them all
+    const ids = (config.hue as any).lightIds?.length ? (config.hue as any).lightIds : [config.hue.lightId];
+    for (const id of ids) {
+      tasks.push(
+        (async () => {
+          try {
+            await setHueColor(config.hue.ip, config.hue.username, id, cie, bri, tt);
+          } catch {
+            // network device may be unreachable — keep ambient non-blocking
+          }
+        })(),
+      );
+    }
   }
 
   if (config.govee?.enabled) {

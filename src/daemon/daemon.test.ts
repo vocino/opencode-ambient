@@ -44,6 +44,17 @@ describe("daemon utils", () => {
     expect(getLastState()).toBe("building");
   });
 
+  it("handleGlow accepts pressure and fixStreak", async () => {
+    const cfg = defaultConfig();
+    cfg.hue.enabled = false;
+    cfg.govee.enabled = false;
+    cfg.daemon.idleReturnMs = 60000;
+    await handleGlow({ state: "building", pressure: 0.85, fixStreak: 2 } as any, cfg);
+    expect(getLastState()).toBe("building");
+    await handleGlow({ state: "fixing", usagePercent: 95, fixStreak: 4 } as any, cfg);
+    expect(getLastState()).toBe("fixing");
+  });
+
   it("handleGlow schedules idle return but can be reset", async () => {
     const cfg = defaultConfig();
     cfg.hue.enabled = false;

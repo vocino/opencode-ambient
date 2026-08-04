@@ -71,13 +71,26 @@ export async function handleGlow(req: GlowRequest, cfg: AmbientConfig): Promise<
   const state = req?.state as AgentState;
   if (!state || !VALID_STATES.has(state)) return;
   lastState = state;
-  await glow(cfg, state);
+
+  // Pressure handling: 0..1 = token tank drain, 0..100 legacy, tokensUsed/max
+  let pressure: number | undefined;
+  if (typeof req.pressure === "number") pressure = req.pressure;
+  else if (typeof req.usagePercent === "number") pressure = req.usagePercent / 100;
+  else if (typeof req.tokensUsed === "number" && typeof req.tokensMax === "number" && req.tokensMax > 0) {
+    pressure = Math.min(1, req.tokensUsed / req.tokensMax);
+  }
+
+  const fixStreak = typeof req.fixStreak === "number" ? req.fixStreak : undefined;
+  const bri = typeof req.brightness === "number" ? req.brightness : undefined;
+  const tt = typeof req.transitionMs === "number" ? req.transitionMs : undefined;
+
+  await glow(cfg, state, { pressure, fixStreak, brightness: bri, transitionMs: tt });
 
   if (idleTimer) clearTimeout(idleTimer);
   if (state !== "idle") {
     idleTimer = setTimeout(async () => {
       try {
-        await glow(cfg, "idle");
+        await glow(cfg, "idle", pressure ? { pressure: Math.min(1, pressure * 0.9) } : undefined);
         lastState = "idle";
       } catch {}
     }, cfg.daemon.idleReturnMs);
