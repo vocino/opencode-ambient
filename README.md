@@ -134,6 +134,23 @@ Compaction or `session.created` = tank refills, room clears.
 - `glow <state>` — manual `idle|planning|building|tool|fixing|waiting|done|error|cursor|meta|anthropic|openai|openrouter|google|local`
 - `demo` — cycle all 15
 
+## Ecosystem — opencode suite
+
+Part of a small suite for opencode that actually ships:
+
+- **opencode-autonomy** — zero-babysitting config, 5 models, 5 families, long tasks just ship — [vocino/opencode-autonomy](https://github.com/vocino/opencode-autonomy)
+- **opencode-ambient** — you are here, see tokens and money in your room — [vocino/opencode-ambient](https://github.com/vocino/opencode-ambient) — `npm i -g opencode-ambient`
+
+They work great together: autonomy drives, ambient glows. Install both:
+
+```bash
+opencode plugin opencode-autonomy --global
+npm i -g opencode-ambient
+opencode-ambient setup && opencode-ambient start
+```
+
+More coming in the same lane — one-binary, explicit, no bloat.
+
 ## Versioning
 
 Strict [semver](https://semver.org) — `MAJOR.MINOR.PATCH`, `0.y.z` same rules. `fix:` → PATCH, `feat:` → MINOR, `feat!:` → MAJOR.
