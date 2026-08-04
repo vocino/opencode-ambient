@@ -1,6 +1,6 @@
 # opencode-ambient
 
-**Your room glows with your agents** — Hue + Govee pulse as opencode plans, builds, fixes, ships.
+**Your room glows with your agents** — Hue + Govee pulse as opencode plans, builds, fixes, ships. Now with **Cursor + Meta** provider colors so you see which model is driving.
 
 ```
 idle        🟢 green calm
@@ -9,6 +9,8 @@ building    🟠 orange writing code
 tool        🔵 cyan tool calls
 fixing      🟠 orange repair
 waiting     🟣 purple needs input
+cursor      🟡 yellow amber — Cursor (claude-opus, composer)
+meta        🔵 deep blue — Meta AI (muse-spark)
 done        ⚪ white flash complete
 error       🔴 red error
 ```
@@ -88,12 +90,26 @@ Examples use `10.0.0.x` — replace with your LAN IPs. No `192.168.4/5/6.x` or s
 - `start` — daemon on 127.0.0.1:7686 POST /glow
 - `stop` — stop daemon
 - `status` — pid + hue/govee + current state
-- `glow <state>` — manual `idle|planning|building|tool|fixing|waiting|done|error`
+- `glow <state>` — manual `idle|planning|building|tool|fixing|waiting|cursor|meta|done|error`
 - `demo` — cycle all
+
+## How real-time provider glow works
+
+Your home setup: `meta/muse-spark-1.1` build primary + `cursor/*` for council critic/creative (opencode-autonomy). Ambient's plugin hooks:
+
+- `chat.params` — opencode tells plugin `{model: "cursor/claude-opus-4-6", provider: "cursor"}` right before the LLM thinks. Ambient pushes `cursor` yellow instantly
+- same for `meta/muse-spark-1.1` → `meta` deep blue
+
+You see:
+```
+meta blue → orange building → cyan tool → yellow cursor (council kicking in) → orange fixing → white done → green idle
+```
+
+So you *feel* model routing live on your office lights without looking at logs.
 
 ## opencode-autonomy tie-in
 
-Works with `vocino/opencode-autonomy` — 4 agents (build 300, fixer 150, explore 80, plan 100). When build agent writes files: orange. Tool uses: cyan. Waiting for permission: purple. Done: white flash → idle green.
+Works with `vocino/opencode-autonomy` — 4 agents (build 300 meta, fixer 150 openrouter, explore 80 qwen, plan 100 + council cursor). When build agent writes files: orange. Tool uses: cyan. Waiting for permission: purple. Council (cursor) active: yellow flash. Meta primary: blue flash. Done: white flash → idle green.
 
 ## Versioning
 
