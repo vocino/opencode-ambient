@@ -1,160 +1,98 @@
 # opencode-ambient
 
-**See the light and know where your tokens and money are going.** Dark room, Hue + Govee shift as your agents work — provider shows as color, cost shows as life.
+See where your tokens and money go — in your room.
 
-> One function does both Hue (CIE xy) + Govee (LAN UDP). No dashboard to check, just feel the room.
+## Problem
 
-## The Room
+You run opencode with 5 models across 7 providers. You pay in 3 places but your room stays the same color. Dashboard numbers don't give you a feel for it.
 
-You're coding in the dark. The lights do things as work happens:
-
-- calm blue-green when idle
-- bright when fresh
-- dim when tank drains
-- fast flicker when stuck fixing
-
-No numbers, no dashboard. Glance at the room.
-
-## Principles (the contract)
-
-Full spec: [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) — this is the source of truth. If a feature doesn't fit these, we change the feature.
-
-**1. Provider-indexed, not model-indexed.** Short list of 7 beats 40 models. Where you pay is what glows:
-
-| provider | color | hex | when it glows |
-|---|---|---|---|
-| `meta` | deep blue | `#0064d1` | Meta AI, your 1M base |
-| `cursor` | yellow | `#facc15` | Cursor proxy / council |
-| `anthropic` | clay orange | `#d97757` | Claude direct |
-| `openai` | teal | `#10a37f` | GPT direct |
-| `openrouter` | violet | `#8b5cf6` | router spend |
-| `google` | light blue | `#4285f4` | Gemini |
-| `local` | slate | `#9ca3af` | ollama / local llm |
-
-If Claude comes via OpenRouter → violet. Where money goes = what glows.
-
-**2. Token tank = money.** One pressure value `0..1`:
-
-- `0%` fresh, 100% bright, calm
-- `40%` hint of amber, still fine
-- `70%` amber warning, think about `/compact`
-- `85%` orange hot, expensive zone
-- `95%+` red drained, 35% dim — finish or reset
-
-Brightness IS life. Warmth IS cost.
-
-**3. Fix-loop = urgency, not color.** Same orange, faster + brighter:
-
-- 2 fixes in 45s = +6% bright
-- 3 fixes = 60% faster flicker
-- 4+ = 80ms pulse, you feel stuck
-
-**4. One light carries two signals.** Base = provider. Warm shift + dim = pressure. Yellow at 90% still feels yellow, just hotter and dimmer.
-
-**5. Multi-light future-proof.** Your 3-light office? desk = provider, plays = pressure echo. Single-light stays compatible via `lightIds[]`.
-
-## Install
+## How to install
 
 ```bash
 npm i -g opencode-ambient
-opencode-ambient setup     # Hue bridge + pick light + Govee scan
-opencode-ambient start     # tiny daemon 127.0.0.1:7686 POST /glow {state}
-opencode-ambient demo      # cycle all 15 states
+opencode-ambient setup
 ```
 
-Add to `opencode.json`:
+Or one prompt:
+
+```
+Install the opencode-ambient plugin from https://github.com/vocino/opencode-ambient
+```
+
+Also works with `npx`:
+
+```bash
+npx opencode-ambient@latest setup
+```
+
+Then add to `opencode.json`:
 
 ```json
-{
-  "plugin": ["opencode-ambient/plugin"]
-}
+{ "plugin": ["opencode-ambient/plugin"] }
 ```
 
-No daemon polling — opencode pushes, ambient glows.
+## How to use
 
-## How it works
-
-```
-opencode 4 agents → chat.params (model/provider) → plugin glow(provider color)
-                  → tool.execute.before → plugin glow(building|tool + pressure)
-                  → daemon POST /glow {state, pressure, fixStreak}
-                                 → hue: PUT /api/<user>/lights/<id>/state {xy,bri,tt}
-                                   govee: UDP 4003 {color:{r,g,b}}
-                  30s after last glow → idle green fade
+```bash
+opencode-ambient start      # daemon on :7686, idle -> green
+opencode-ambient glow meta  # test your light
+opencode-ambient demo       # cycles all 15 states
 ```
 
-Core files:
-
-- `src/ambient/color.ts` — all palette + blending (provider base → pressure warm → fix urgency) — *single source of truth*
-- `src/ambient/index.ts` — `glow()` fans to `lightIds[]` or `lightId`, calls Hue + Govee
-- `src/plugin.ts` — provider detection + token estimate, no color logic
-- `src/daemon/daemon.ts` — validates, forwards `pressure, fixStreak, brightness` to `glow()`
-
-Adding a new provider = one hex in `color.ts`, no code change otherwise.
-
-## Real-time provider glow
-
-Home setup: `meta/muse-spark-1.1` build primary + `cursor/*` council (opencode-autonomy). You see:
+In opencode it just works:
 
 ```
-meta blue → orange building → cyan tool → yellow cursor (council) → orange fixing → white done → green idle
+meta blue -> building orange -> tool cyan -> cursor yellow -> done white -> idle green
 ```
 
-Same for anthropic/openai/openrouter/google/local — each has its own glow.
+Dim means tank draining. Fast flicker means stuck fixing.
 
-Token pressure: plugin estimates from `chat.params` + `tool` + `message` chars (~3.5 chars per token). When opencode sends real usage via `message.updated`, we snap to it. Max context inferred: 1M if meta/spark, 200k if claude/cursor/anthropic, 128k default, 32k local.
+## What it catches
 
-Compaction or `session.created` = tank refills, room clears.
+Provider = color. Pressure = brightness. Fix streak = tempo.
+
+- `meta` `#0064d1` deep blue — Meta AI base, 1M
+- `cursor` `#facc15` yellow — Cursor proxy / council
+- `anthropic` `#d97757` clay — Claude direct
+- `openai` `#10a37f` teal — GPT direct
+- `openrouter` `#8b5cf6` violet — router spend
+- `google` `#4285f4` light blue — Gemini
+- `local` `#9ca3af` slate — ollama / local
+
+Tank 0% bright calm → 40% amber hint → 70% amber → 85% orange → 95%+ red 35% dim.
+
+Router first: if it came via OpenRouter, it glows violet. Where money goes = what glows.
+
+Full contract: `docs/PRINCIPLES.md` — pressure table, fix pulse math, multi-light.
+
+## What's inside
+
+- `docs/PRINCIPLES.md` — all rules, single source of truth
+- `src/ambient/color.ts` — 7 providers + pressure blend + fix urgency
+- `src/ambient/index.ts` — fans to `lightIds[]` or single `lightId`
+- `src/plugin.ts` — detects provider from `chat.params`, estimates tokens
+- `src/daemon/` — tiny http → Hue xy + Govee UDP
+
+One function glows both Hue and Govee. No extra deps.
 
 ## Config
 
-`~/.opencode-ambient/config.json`:
+`~/.opencode-ambient/config.json`
 
 ```json
 {
-  "hue": {
-    "enabled": true,
-    "ip": "10.0.0.10",
-    "username": "...",
-    "lightId": 1,
-    "lightIds": [1, 2, 3],
-    "lightName": "Office"
-  },
-  "govee": { "enabled": false },
-  "daemon": { "port": 7686, "transitionMs": 400, "idleReturnMs": 30000 }
+  "hue": { "ip": "10.0.0.10", "username": "...", "lightId": 1, "lightIds": [1,2,3] },
+  "daemon": { "port": 7686, "idleReturnMs": 30000 }
 }
 ```
 
-`lightIds` optional — if set, desk + plays all get same glow. Room group coming.
+## Ecosystem
 
-## CLI
+- [opencode-autonomy](https://github.com/vocino/opencode-autonomy) — same thesis, autonomy that ships
+- `npm i -g opencode-ambient && opencode-ambient setup && opencode-ambient start`
 
-- `setup` — discover Hue bridge + Govee
-- `start` / `stop` / `status` — daemon
-- `glow <state>` — manual `idle|planning|building|tool|fixing|waiting|done|error|cursor|meta|anthropic|openai|openrouter|google|local`
-- `demo` — cycle all 15
-
-## Ecosystem — opencode suite
-
-Part of a small suite for opencode that actually ships:
-
-- **opencode-autonomy** — zero-babysitting config, 5 models, 5 families, long tasks just ship — [vocino/opencode-autonomy](https://github.com/vocino/opencode-autonomy)
-- **opencode-ambient** — you are here, see tokens and money in your room — [vocino/opencode-ambient](https://github.com/vocino/opencode-ambient) — `npm i -g opencode-ambient`
-
-They work great together: autonomy drives, ambient glows. Install both:
-
-```bash
-opencode plugin opencode-autonomy --global
-npm i -g opencode-ambient
-opencode-ambient setup && opencode-ambient start
-```
-
-More coming in the same lane — one-binary, explicit, no bloat.
-
-## Versioning
-
-Strict [semver](https://semver.org) — `MAJOR.MINOR.PATCH`, `0.y.z` same rules. `fix:` → PATCH, `feat:` → MINOR, `feat!:` → MAJOR.
+Using opencode on Arch Linux. Pair them: autonomy drives, ambient glows.
 
 ## License
 
-MIT — Vocino
+MIT
