@@ -51,7 +51,11 @@ program
     if (!configExists()) { const cfg = defaultConfig(); await glow(cfg, s); console.log(`glow ${s} (default, no config)`); return; }
     const cfg = loadConfig();
     if (isDaemonRunning()) {
-      await fetch(`http://127.0.0.1:${cfg.daemon.port}/glow`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: s }) });
+      try {
+        await fetch(`http://127.0.0.1:${cfg.daemon.port}/glow`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state: s }), signal: AbortSignal.timeout(2000) });
+      } catch {
+        await glow(cfg, s); // daemon pid alive but not listening — glow directly
+      }
     } else {
       await glow(cfg, s);
     }
